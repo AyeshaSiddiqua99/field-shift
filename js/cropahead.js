@@ -122,7 +122,7 @@ function chapter(k) {
 }
 
 async function openField(site) {
-  S.site = site; const my = ++S.tok; screen('s-field'); S.fut = null; S.cropMode = 'now'; S.sim = null; S.lastPick = null;
+  S.site = site; const my = ++S.tok; screen('s-field'); S.fut = null; S.futP = null; S.cropMode = 'now'; S.sim = null; S.lastPick = null;
   q('#next').innerHTML = '<div class="wait" style="--c:var(--leaf)">Working out what to plant next season...</div>';
   q('#ftitle').textContent = site.name; q('#fwhere').textContent = `near ${S.name}`;
   for (const [k] of CH) body(k).innerHTML = `<div class="wait">Getting the facts...</div>`;
@@ -140,6 +140,7 @@ async function openField(site) {
     const c = prepClimate(p), table = evalCrops(c, farm);
     S.sim = { c, table, farm, sp, raw: p };
     renderCrops(table, sp, h); renderGrow(); renderNeed(); renderNext();
+    loadFuture().catch(() => {}); // warm up the 2050s view in the background
   }).catch(e => { if (my === S.tok) for (const k of ['crops', 'grow']) body(k).innerHTML = `<p class="say">Could not get the weather for this field (${esc(e.message)}).</p>`; });
   renderRotate(); renderWater(L, my); renderSell(L, my);
 }
@@ -313,12 +314,17 @@ function cropStats(tables, id) {
   return { fit, bad };
 }
 function renderCrops(table, sp, h) { S.cropArgs = { table, sp, h }; S.cropMode = S.cropMode || 'now'; drawCrops(); }
-async function loadFuture() {
-  if (S.fut) return S.fut;
+// started in the background as soon as a field opens, so the 2050s switch is usually ready by the time it is pressed
+function loadFuture() {
+  if (S.fut) return Promise.resolve(S.fut);
+  if (S.futP) return S.futP;
   const L = `lat=${S.site.lat.toFixed(4)}&lon=${S.site.lon.toFixed(4)}`, my = S.tok;
-  const f = await getJSON(`/api/future?${L}`, 240000); if (my !== S.tok) throw new Error('field changed');
-  const raw = S.sim.raw, tables = f.models.map(m => evalCrops(prepClimate(raw, { dT: m.dT, dP: m.dP, ext: 0 }), S.sim.farm));
-  S.fut = { ...f, tables }; return S.fut;
+  S.futP = getJSON(`/api/future?${L}`, 240000).then(f => {
+    if (my !== S.tok) throw new Error('field changed');
+    const raw = S.sim.raw, tables = f.models.map(m => evalCrops(prepClimate(raw, { dT: m.dT, dP: m.dP, ext: 0 }), S.sim.farm));
+    S.fut = { ...f, tables }; return S.fut;
+  }).catch(e => { if (my === S.tok) S.futP = null; throw e; });
+  return S.futP;
 }
 function drawCrops() {
   const { table, sp, h } = S.cropArgs, b = body('crops'), fut = S.cropMode === 'future' ? S.fut : null;
@@ -541,9 +547,9 @@ function renderGrow() {
     <details class="how"><summary>How does the simulation work?</summary>Each day of each season, our crop model (FAO-56 water balance with NASA POWER rain, temperature and sunshine, on your SoilGrids soil) works out how much water is in the soil, how thirsty the crop is, heat and frost. That sets the plant size and colour you see and the harvest. Planting the same crop twice in a row loses ${R.omafa.corn_after_corn_loss_pct}% (corn) or ${R.omafa.soy_after_soy_loss_pct}% (soybeans), the figures in Ontario's 2026 crop budgets. ${money_ok ? `Bushels use Ontario's budget yields (corn ${BUDGET_BU.maize}, soybeans ${BUDGET_BU.soybean}, wheat ${BUDGET_BU.wheat} bu/acre) scaled by how good each season was here; dollars = sales at Statistics Canada Ontario prices (${esc(R.prices.month)}) minus Ontario's 2026 budget operating costs per acre (corn $${COST.maize}, soybeans $${COST.soybean}, wheat $${COST.wheat}, grain only). Land, machinery and your own time are not included.` : 'Harvests are shown as % of a full harvest.'} It does not include pests, disease or soil building, which the field trials in step 4 show make rotation pay even more.</details>`;
   const rows = plans[0].seasons.map((_, si) => si);
   const shown = new Set();
-  const fmt = x => money_ok ? `${Math.round(x.bu)} bu · ${x.cad < 0 ? '−' : ''}${money(Math.abs(x.cad))} left` : `${Math.round(x.rel * 100)}%`;
+  const fmt = x => money_ok ? `${Math.round(x.bu)} bushels · <span title="Sales minus seed, fertilizer, sprays, fuel and other growing costs, per acre">${x.cad < 0 ? 'loses ' : 'earns '}${money(Math.abs(x.cad))} an acre</span>` : `${Math.round(x.rel * 100)}% of a full harvest`;
   const draw = done => {
-    q('#gres').innerHTML = `<div class="row" style="font-weight:800;color:var(--mut)"><span>Harvest</span><span style="display:flex;justify-content:space-between"><span>Same crop every year</span><span>Our rotation</span></span><span></span></div>` + rows.map(si => {
+    q('#gres').innerHTML = (money_ok ? `<p style="margin:0 0 6px;color:var(--mut);font-size:16px">💵 <b style="color:var(--ink)">"Earns"</b> = what you sell the harvest for, minus what it cost to grow (seed, fertilizer, sprays, fuel, drying, trucking), for one acre. Land rent, machinery and your own time are not taken off.</p>` : '') + `<div class="row" style="font-weight:800;color:var(--mut)"><span>Harvest</span><span style="display:flex;justify-content:space-between"><span>Same crop every year</span><span>Our rotation</span></span><span></span></div>` + rows.map(si => {
       if (!shown.has(si)) return `<div class="row"><span>${plans[0].seasons[si].year}</span><span style="color:var(--mut)">growing...</span><span></span></div>`;
       const a = plans[0].seasons[si], r = plans[1].seasons[si];
       return `<div class="row"><span>${a.year}</span><span style="display:flex;justify-content:space-between;gap:8px"><b>${a.crop.emo} ${fmt(a)}${a.pen ? ' <small style="color:var(--bad)">(same crop again)</small>' : ''}</b><b>${r.crop.emo} ${fmt(r)}</b></span><span></span></div>`;

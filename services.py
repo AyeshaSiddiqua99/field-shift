@@ -660,10 +660,13 @@ def _nex_year(model, exp, var, year, lat, lon):
 
 
 def future(lat, lon):
+    # NEX-GDDP-CMIP6 is a 0.25 degree grid (cell centres at .125, .375, ...): every field in the same cell gets the same answer, so share it
+    lat = math.floor(lat / 0.25) * 0.25 + 0.125; lon = math.floor(lon / 0.25) * 0.25 + 0.125
+
     def go():
         import concurrent.futures as cf
         jobs = [(m, e, v, y) for m in NEX_MODELS for e, ys in NEX_YEARS.items() for v in ("tasmax", "pr") for y in ys]
-        with cf.ThreadPoolExecutor(12) as ex:
+        with cf.ThreadPoolExecutor(len(jobs)) as ex:  # each request takes ~15 s on NASA's side, so ask for all of them at once
             res = dict(zip(jobs, ex.map(lambda j: _nex_year(*j, lat, lon), jobs)))
         models = []
         for m in NEX_MODELS:
@@ -678,4 +681,4 @@ def future(lat, lon):
             models.append({"model": m, "dT": round(dT, 2), "dP": round(dP, 3), "hot_now": round(hot("historical"), 1), "hot_2050s": round(hot("ssp245"), 1)})
         return {"source": "NASA NEX-GDDP-CMIP6 (downscaled CMIP6), scenario SSP2-4.5 (middle of the road)", "scenario": "SSP2-4.5",
                 "periods": {"now": "2012-2014", "future": "2049-2051"}, "models": models}
-    return cached("future", f"{lat:.2f},{lon:.2f}", go)
+    return cached("future", f"cell {lat:.3f},{lon:.3f}", go)
