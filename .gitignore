@@ -8,3 +8,6 @@ share/
 node_modules/
 # cached map tiles are third-party imagery (Esri, NASA GIBS): fetched on demand, not redistributed here
 data/cache/tiles/
+
+# NASA POWER downloads for training (regenerate with ml/fetch_power.py)
+ml/cache/

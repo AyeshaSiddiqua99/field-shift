@@ -1,0 +1,252 @@
+{
+ "rows": 2071,
+ "series": 109,
+ "bad_year_share": 0.179,
+ "tests": {
+  "leave_one_country_out": {
+   "zero": {
+    "mae": 8.43,
+    "rmse": 12.71,
+    "r2": 0.0,
+    "spearman": null,
+    "bad_year_recall": 0.0,
+    "bad_year_precision": 0.0
+   },
+   "ridge": {
+    "mae": 8.31,
+    "rmse": 11.91,
+    "r2": 0.122,
+    "spearman": 0.309,
+    "bad_year_recall": 0.418,
+    "bad_year_precision": 0.385
+   },
+   "stress": {
+    "mae": 8.4,
+    "rmse": 12.18,
+    "r2": 0.082,
+    "spearman": 0.252,
+    "bad_year_recall": 0.259,
+    "bad_year_precision": 0.349
+   },
+   "gbm": {
+    "mae": 8.3,
+    "rmse": 11.8,
+    "r2": 0.139,
+    "spearman": 0.32,
+    "bad_year_recall": 0.41,
+    "bad_year_precision": 0.421
+   },
+   "gbm_interval_coverage_10_90": 0.756
+  },
+  "leave_one_year_out": {
+   "zero": {
+    "mae": 8.43,
+    "rmse": 12.71,
+    "r2": 0.0,
+    "spearman": null,
+    "bad_year_recall": 0.0,
+    "bad_year_precision": 0.0
+   },
+   "ridge": {
+    "mae": 8.26,
+    "rmse": 11.82,
+    "r2": 0.135,
+    "spearman": 0.308,
+    "bad_year_recall": 0.42,
+    "bad_year_precision": 0.392
+   },
+   "stress": {
+    "mae": 8.38,
+    "rmse": 12.17,
+    "r2": 0.084,
+    "spearman": 0.248,
+    "bad_year_recall": 0.267,
+    "bad_year_precision": 0.355
+   },
+   "gbm": {
+    "mae": 8.1,
+    "rmse": 11.49,
+    "r2": 0.183,
+    "spearman": 0.325,
+    "bad_year_recall": 0.464,
+    "bad_year_precision": 0.456
+   },
+   "gbm_interval_coverage_10_90": 0.749,
+   "range_margin": 1.5,
+   "calibrated_coverage": 0.809
+  }
+ },
+ "events": [
+  {
+   "area": "Argentina",
+   "crop": "maize",
+   "year": 2023,
+   "actual": -25.6,
+   "predicted": -18.4,
+   "range": [
+    -32.4,
+    0.8
+   ]
+  },
+  {
+   "area": "Argentina",
+   "crop": "soybean",
+   "year": 2023,
+   "actual": -36.6,
+   "predicted": -20.4,
+   "range": [
+    -38.6,
+    3.5
+   ]
+  },
+  {
+   "area": "Argentina",
+   "crop": "wheat",
+   "year": 2023,
+   "actual": -4.6,
+   "predicted": 0.8,
+   "range": [
+    -8.4,
+    13.5
+   ]
+  },
+  {
+   "area": "Argentina",
+   "crop": "maize",
+   "year": 2018,
+   "actual": -10.6,
+   "predicted": -5.4,
+   "range": [
+    -17.9,
+    5.8
+   ]
+  },
+  {
+   "area": "Argentina",
+   "crop": "soybean",
+   "year": 2018,
+   "actual": -15.2,
+   "predicted": -20.3,
+   "range": [
+    -39.1,
+    5.9
+   ]
+  },
+  {
+   "area": "United States of America",
+   "crop": "maize",
+   "year": 2012,
+   "actual": -22.4,
+   "predicted": -21.4,
+   "range": [
+    -35.9,
+    -0.2
+   ]
+  },
+  {
+   "area": "United States of America",
+   "crop": "soybean",
+   "year": 2012,
+   "actual": -10.7,
+   "predicted": -15.5,
+   "range": [
+    -34.4,
+    2.9
+   ]
+  },
+  {
+   "area": "Ukraine",
+   "crop": "wheat",
+   "year": 2010,
+   "actual": -14.1,
+   "predicted": 4.2,
+   "range": [
+    -12.8,
+    21.5
+   ]
+  },
+  {
+   "area": "Russian Federation",
+   "crop": "wheat",
+   "year": 2010,
+   "actual": -12.8,
+   "predicted": 2.6,
+   "range": [
+    -7.8,
+    12.7
+   ]
+  },
+  {
+   "area": "France",
+   "crop": "wheat",
+   "year": 2016,
+   "actual": -23.6,
+   "predicted": 4.2,
+   "range": [
+    -6.2,
+    14.3
+   ]
+  },
+  {
+   "area": "Australia",
+   "crop": "wheat",
+   "year": 2018,
+   "actual": -25.6,
+   "predicted": -2.7,
+   "range": [
+    -17.5,
+    5.8
+   ]
+  },
+  {
+   "area": "Canada",
+   "crop": "wheat",
+   "year": 2021,
+   "actual": -26.1,
+   "predicted": -12.0,
+   "range": [
+    -23.5,
+    4.5
+   ]
+  },
+  {
+   "area": "India",
+   "crop": "wheat",
+   "year": 2022,
+   "actual": 0.8,
+   "predicted": 2.4,
+   "range": [
+    -7.3,
+    16.7
+   ]
+  },
+  {
+   "area": "Brazil",
+   "crop": "soybean",
+   "year": 2022,
+   "actual": -10.3,
+   "predicted": 4.3,
+   "range": [
+    -7.7,
+    14.0
+   ]
+  }
+ ],
+ "trained_on": {
+  "countries": 44,
+  "crops": [
+   "barley",
+   "maize",
+   "potato",
+   "rapeseed",
+   "rice",
+   "sorghum",
+   "soybean",
+   "wheat"
+  ],
+  "years": [
+   2006,
+   2024
+  ]
+ }
+}
