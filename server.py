@@ -54,6 +54,23 @@ class Handler(SimpleHTTPRequestHandler):
         q = parse_qs(u.query)
         if u.path in ("/api/gibs", "/api/esri"):
             return self.tile(u.path, q)
+        if u.path == "/api/earth":
+            try:
+                data = services.earth(q.get("kind", ["day"])[0])
+            except Exception as e:
+                return self.reply(502, {"error": str(e)})
+            self.send_response(200); self.send_header("Content-Type", "image/jpeg"); self.send_header("Content-Length", str(len(data))); self.end_headers()
+            return self.wfile.write(data)
+        if u.path == "/api/outlook":
+            try:
+                lat, lon, crop = round(num(q, "lat", -60, 72), 4), round(num(q, "lon", -180, 180), 4), q["crop"][0]
+                import sys
+                sys.path.insert(0, os.path.join(ROOT, "ml"))
+                import outlook
+                return self.reply(200, outlook.predict(power(lat, lon), lat, lon, crop))
+            except Exception as e:
+                traceback.print_exc()
+                return self.reply(502, {"error": str(e)})
         if u.path == "/api/layerdates":
             try:
                 return self.reply(200, services.gibs_latest())
@@ -74,7 +91,7 @@ class Handler(SimpleHTTPRequestHandler):
                 lat, lon = num(q, "lat", -60, 72), num(q, "lon", -180, 180)
                 fn = {"/api/power": power, "/api/soil": services.soil, "/api/climate": services.climate,
                       "/api/ndvi": services.ndvi, "/api/farms": services.farms, "/api/slope": services.slope,
-                      "/api/yield": services.yield_series, "/api/fires": services.fires}.get(u.path)
+                      "/api/yield": services.yield_series, "/api/fires": services.fires, "/api/history": services.crop_history, "/api/buyers": services.buyers, "/api/firehistory": services.fire_history, "/api/water": services.water, "/api/future": services.future}.get(u.path)
                 if fn is None:
                     return self.send_error(404)
                 lat, lon = round(lat, 4), round(lon, 4)

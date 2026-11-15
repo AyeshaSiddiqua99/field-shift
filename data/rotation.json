@@ -1,0 +1,50 @@
+{
+  "_note": "Every number below was read from the source linked next to it (checked 2026-11-15). Used by cropahead.html, step 4 and step 6.",
+  "elora": {
+    "title": "University of Guelph long-term rotation trial, Elora, Ontario (since 1982)",
+    "url": "https://fieldcropnews.com/?p=25515",
+    "paper": "Janovicek et al. 2021, Agronomy Journal, doi:10.1002/agj2.20605",
+    "period": "2002-2017",
+    "corn_bu_ac": { "Corn every year": 143.2, "Corn, corn, soybean, soybean": 156.8, "Corn, corn, soybean, wheat": 165.0 },
+    "net_ac": { "Corn every year": 125, "Corn, corn, soybean, soybean": 165, "Corn, corn, soybean, wheat": 179 }
+  },
+  "ridgetown": {
+    "title": "University of Guelph Ridgetown rotation trial, Ontario (2012-2017)",
+    "url": "https://fieldcropnews.com/?p=25515",
+    "corn_bu_ac": { "Corn every year": 194.5, "Corn, soybean": 195.6, "Corn, soybean, wheat": 201.4, "Corn, soybean, wheat + red clover": 209.3 },
+    "best_net": "Corn, soybean, wheat with red clover: $371 per acre (straw sold)"
+  },
+  "bowles": {
+    "title": "Bowles et al. 2020, One Earth: 347 site-years, 11 long-term experiments across North America (two in Ontario)",
+    "url": "https://doi.org/10.1016/j.oneear.2020.02.007",
+    "corn_gain_pct": 28.1,
+    "drought_loss_cut_pct": [14.0, 89.9]
+  },
+  "gaudin": {
+    "title": "Gaudin et al. 2015, PLOS ONE: 31 years at Elora, Ontario",
+    "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0113261",
+    "hot_dry_corn_pct": 7,
+    "hot_dry_soy_pct": 22
+  },
+  "omafa": {
+    "title": "Ontario Ministry of Agriculture (OMAFA) Publication 60, 2026 Field Crop Budgets",
+    "url": "https://www.ontario.ca/page/publication-60-field-crop-budgets",
+    "corn_after_corn_loss_pct": 8.5,
+    "soy_after_soy_loss_pct": 10,
+    "corn_budget_yield_bu_ac": 193,
+    "corn_operating_cost_ac": 790.80,
+    "soy_operating_cost_ac": 412.85,
+    "wheat_operating_cost_ac": 564.55,
+    "_wheat_cost_note": "Grain only (Total Operating Expenses - Grain, conventional). With straw handling it is 652.65; straw sales are not counted, so the grain-only cost is used.",
+    "n_credit_after_soy_kg_ha": 30,
+    "n_cost_per_kg": 2.15
+  },
+  "prices": {
+    "title": "Statistics Canada, table 32-10-0077-01, farm product prices, Ontario",
+    "url": "https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210007701",
+    "month": "September 2026",
+    "cad_t": { "Corn": 275.38, "Soybeans": 604.86, "Wheat": 315.44 },
+    "bu_per_t": { "Corn": 39.368, "Soybeans": 36.744, "Wheat": 36.744 },
+    "currency": "Canadian dollars"
+  }
+}

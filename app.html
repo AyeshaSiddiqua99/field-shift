@@ -97,6 +97,7 @@ body.pick #pick{display:flex;animation:rise .6s both}
 .sim{font:700 10.5px "DM Sans",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#1b1405;background:var(--gold);border-radius:999px;padding:2px 9px;margin-left:8px;vertical-align:2px}
 #fld.ga #fc,#fld.ga .cap,#fld.ga .zm{display:none}
 #fld.ga{flex:2.8}
+@media(max-width:860px){#fld.ga{flex:none;height:min(92vh,760px);min-height:560px}}
 #gal{position:absolute;inset:0;display:flex;flex-direction:column}
 .galtop{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px 0}
 .galtop b{font:500 17px Fraunces,Georgia,serif;margin-right:auto}
@@ -110,6 +111,21 @@ body.pick #pick{display:flex;animation:rise .6s both}
 .lg .lu{font-size:9.5px;color:var(--mut)}
 .lg .lcap{font-size:9px;color:var(--mut);line-height:1.2;margin-top:2px}.lg .lcap.no{color:var(--gold)}
 @media(max-width:860px){#legs{grid-template-columns:repeat(2,1fr)}#pick{top:60px}}
+/* season outlook: a MODEL ESTIMATE box, visually separate from the measured NASA layers */
+#ol{margin:0 12px 12px;padding:9px 12px;border:1px dashed var(--gold);border-radius:12px;background:rgba(240,195,106,.06)}
+.olh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.olh b{font:500 16px Fraunces,Georgia,serif;margin-right:2px}
+.olb,.olp{font:700 10px "DM Sans",sans-serif;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:2px 8px}
+.olb{background:var(--sky);color:#04121f}.olp{background:var(--gold);color:#1b1405}
+.olh select{margin-left:auto;font:13px "DM Sans",sans-serif;color:var(--ink);background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:10px;padding:4px 8px}
+.oltrack{position:relative;height:10px;margin-top:10px;border-radius:5px;background:rgba(255,255,255,.12)}
+.olz{position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;background:var(--mut)}
+.olr{position:absolute;top:2px;height:6px;border-radius:3px;background:rgba(124,198,255,.55)}
+.olm{position:absolute;top:-3px;width:4px;height:16px;border-radius:2px;background:var(--gold);transform:translateX(-2px)}
+.olt{display:flex;justify-content:space-between;font-size:10px;color:var(--mut);margin-top:2px}
+.olx{font-size:12.5px;margin-top:4px}.olx i{color:var(--mut);font-style:normal}
+.olq{font:700 10px "DM Sans",sans-serif;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--mut)}
+.oli{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);background:transparent;color:var(--mut);font:italic 700 12px Georgia,serif;cursor:pointer;padding:0}
+.olinfo{font-size:11.5px;color:var(--mut);margin-top:6px;line-height:1.4}.olinfo[hidden]{display:none}
 </style></head><body class="home">
 <canvas id="g" aria-label="Rotating Earth. Drag to turn it."></canvas><div class="veil"></div>
 <header id="bar"><button id="brand" title="Back to the start">app name</button><span id="where"></span><button class="chip" id="chg">Change location</button></header>

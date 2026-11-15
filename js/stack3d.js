@@ -68,7 +68,7 @@ export function createStack(container, onStatus) {
   async function loadLayer(L) {
     if (!site || (L.timed && !dateIso)) return; const mine = tok[L.key] = (tok[L.key] || 0) + 1;
     const r = await buildTexture(L, site, windowKm * 1000, dateIso); if (mine !== tok[L.key]) return;
-    applyTexture(L.key, r.canvas, r.ok); onStatus?.(L.key, { ok: r.ok, used: r.used, empty: r.empty });
+    applyTexture(L.key, r.canvas, r.ok); onStatus?.(L.key, { ok: r.ok, used: r.used, empty: r.empty, canvas: r.canvas, site, windowKm });
   }
   function drawOutlines() {
     for (const L of STACK_LAYERS) {

@@ -5,18 +5,35 @@ Pick a place on a globe, type an address, choose a nearby farm, and see its real
 (rain, soil moisture, heat, vegetation, water) with NASA's own colour legends. A rotation simulator and a
 "replay your past seasons" page are included.
 
+## CropAhead (the main app)
+
+`cropahead.html` is the farmer-facing app: a NASA 3D Earth, type your town, pick your field, then one big answer
+("Next season, plant ...") and eight plain-language steps:
+
+1. **From space**: real NASA layers (rain, soil water, ground heat, plant health, water) stacked in 3D, with the reading at your field.
+2. **Past crops**: what grew on the field each year (Agriculture and Agri-Food Canada satellite crop map; Canada only).
+3. **AI forecast**: the learned season-outlook model (`ml/`), trained on FAOSTAT yields and NASA POWER weather.
+4. **Why rotate**: evidence from Ontario long-term trials (University of Guelph), OMAFA 2026 budgets, Bowles et al. 2020; money for your field (Ontario).
+5. **Best crops**: crop fit on your soil and NASA weather, with a Today / 2050s switch (NASA NEX-GDDP-CMIP6, 3 models).
+6. **Water & fire**: water a crop could use, nearby lakes/rivers (OpenStreetMap), Ontario water-permit rule, 10+ years of NASA FIRMS fires.
+7. **Grow it**: 3D simulation of "same crop every year" vs the rotation through the last 4 real seasons.
+8. **Where to sell**: Ontario prices (Statistics Canada) and nearby places to contact (OpenStreetMap; not confirmed buyers).
+
+Every number has its source in a "How do we know?" box on the page. Sources and checked figures: `data/rotation.json`.
+
 ## Run it
 
-Python 3 only, no packages to install.
-
 ```bash
+pip install numpy scikit-learn joblib
 python server.py
 ```
 
-Then open http://localhost:8765/ and pick a page:
+(Only the AI forecast needs these packages; everything else is Python 3 standard library.)
+Then open http://localhost:8765/cropahead.html, or one of the older pages:
 
 | Page | What it is |
 | --- | --- |
+| `cropahead.html` | **CropAhead**, the main app (above). |
 | `app.html` | Globe app: globe -> address -> farm list -> real NASA layers. Based on a teammate's globe UI. |
 | `layers.html` | The same flow, minimal: world -> address -> farm -> layers. |
 | `replay.html` | Replay the past seasons of a farm on NASA weather, with a "does this match your memory?" check. |

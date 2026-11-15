@@ -267,7 +267,7 @@ def fires(lat, lon, radius_km=50):
 # key -> (GIBS layer id, tile grid, max zoom, has a date, how many days a snapped date may differ from the one asked for)
 GIBS_LAYERS = {
     "rain": ("IMERG_Precipitation_Rate", "GoogleMapsCompatible_Level6", 6, True, 4),             # NASA GPM IMERG, ~10 km
-    "soil": ("MERRA2_Soil_Water_Root_Zone_Monthly", "GoogleMapsCompatible_Level6", 6, True, 45),  # NASA GMAO MERRA-2, ~50 km
+    "soil": ("MERRA2_Soil_Water_Root_Zone_Monthly", "GoogleMapsCompatible_Level6", 6, True, 120),  # NASA GMAO MERRA-2 (monthly, published ~3 months late), ~50 km
     "heat": ("MODIS_Terra_L3_Land_Surface_Temp_8Day_Day", "GoogleMapsCompatible_Level7", 7, True, 10),  # NASA MODIS, 1 km, 8-day composites (daily images are often cloud-blank)
     "veg": ("MODIS_Terra_L3_NDVI_16Day", "GoogleMapsCompatible_Level9", 9, True, 20),           # NASA MODIS NDVI, 250 m, 16-day composites
     "water": ("OSM_Land_Water_Map", "GoogleMapsCompatible_Level9", 9, False, 0),                # land/water map, static
@@ -409,10 +409,273 @@ def legend(key):
         fmt = lambda v: (f"{v:.0f}" if off else f"{v:.2f}" if vmax <= 1 else f"{v:.2g}")
         ticks = [{"p": p, "label": ("<" if False else "") + fmt((vmin if p == 0 else vmax if p == 1 else pick(p)[0]) - off) + ("+" if p == 1 and key in ("rain", "soil") else "")} for p in (0, 0.25, 0.5, 0.75, 1)]  # "+" = NASA's scale continues above that value
         return {"key": key, "title": title, "units": units, "stops": [f"rgb({e[2][0]},{e[2][1]},{e[2][2]})" for e in (pick(i / 39) for i in range(40))], "ticks": ticks,
+                "entries": [{"lo": round(e[0] - off, 4), "hi": round(e[1] - off, 4) if e[1] != float("inf") else None, "rgb": list(e[2])} for e in ents],
                 "source": f"NASA GIBS colour map {name}"}
-    return cached("legend", key + ":v3", go, ttl_days=30)
+    return cached("legend", key + ":v4", go, ttl_days=30)
 
 
 def esri_tile(z, x, y):
     url = f"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
     return _fetch_png(url, os.path.join(TILE_DIR, f"esri_{z}_{x}_{y}.jpg"))
+
+
+# ---------- what grew there before: Agriculture and Agri-Food Canada Annual Crop Inventory (Canada only, 30 m, satellite-classified) ----------
+ACI = {10: "Cloud", 20: "Water", 30: "Barren", 34: "Urban/developed", 35: "Greenhouses", 50: "Shrubland", 80: "Wetland", 85: "Peatland", 110: "Grassland", 120: "Agriculture (unspecified)",
+       121: "Cropland", 122: "Pasture/forage", 130: "Too wet to seed", 131: "Fallow", 132: "Cereals", 133: "Barley", 134: "Other grains", 135: "Millet", 136: "Oats", 137: "Rye", 139: "Triticale",
+       140: "Wheat", 142: "Sorghum", 145: "Winter wheat", 146: "Spring wheat", 147: "Corn", 148: "Tobacco", 149: "Ginseng", 150: "Oilseeds", 153: "Canola", 154: "Flax", 155: "Mustard",
+       157: "Sunflower", 158: "Soybeans", 160: "Pulses", 162: "Peas", 163: "Chickpeas", 167: "Beans", 168: "Fababeans", 174: "Lentils", 175: "Vegetables", 176: "Tomatoes", 177: "Potatoes",
+       178: "Sugar beets", 180: "Fruits", 188: "Orchard", 190: "Vineyard", 192: "Sod", 195: "Buckwheat", 197: "Hemp", 199: "Other crops", 200: "Forest", 210: "Forest", 220: "Forest", 230: "Forest"}
+
+
+def crop_history(lat, lon):
+    if not (41.5 <= lat <= 70 and -141 <= lon <= -52):
+        return {"covered": False, "years": []}
+    import concurrent.futures as cf
+    import urllib.parse
+
+    def one(y):
+        g = urllib.parse.quote(json.dumps({"x": lon, "y": lat, "spatialReference": {"wkid": 4326}}))
+        u = (f"https://agriculture.canada.ca/imagery-images/rest/services/annual_crop_inventory/{y}/ImageServer/identify"
+             f"?geometry={g}&geometryType=esriGeometryPoint&returnGeometry=false&returnCatalogItems=false&f=json")
+        try:
+            v = int(_http(u, timeout=30, retries=1)["value"])
+        except Exception:
+            return {"year": y, "code": None, "crop": None}
+        return {"year": y, "code": v, "crop": ACI.get(v, f"class {v}")}
+
+    def go():
+        with cf.ThreadPoolExecutor(6) as ex:
+            return {"covered": True, "source": "Agriculture and Agri-Food Canada, Annual Crop Inventory (satellite-classified, 30 m)", "years": list(ex.map(one, range(2015, 2026)))}
+    return cached("crophist", f"{lat:.4f},{lon:.4f}", go, ttl_days=90)
+
+
+# ---------- NASA Blue Marble whole-Earth image for the 3D globe (GIBS WMS, equirectangular) ----------
+EARTH = {"day": ("BlueMarble_NextGeneration", ""), "night": ("VIIRS_Black_Marble", "&TIME=2016-01-01")}
+
+
+def earth(kind):
+    layer, extra = EARTH[kind]
+    path = os.path.join(CACHE, f"earth_{kind}.jpg")
+    if os.path.exists(path):
+        return open(path, "rb").read()
+    url = ("https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1"
+           f"&LAYERS={layer}&SRS=EPSG:4326&BBOX=-180,-90,180,90&WIDTH=4096&HEIGHT=2048&FORMAT=image/jpeg{extra}")
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=120) as r:
+        data = r.read()
+    if len(data) < 20000:
+        raise RuntimeError("NASA GIBS returned no image")
+    open(path, "wb").write(data)
+    return data
+
+
+# ---------- places a farmer could contact to sell (OpenStreetMap; NOT confirmed buyers) ----------
+FOOD = ("food", "flour", "feed", "grain", "malt", "beer", "brew", "wine", "spirit", "distill", "ethanol", "bread", "bake", "candy", "chocolate", "dairy",
+        "meat", "juice", "snack", "cereal", "oil", "sugar", "starch", "tofu", "soy", "vegetable", "fruit", "potato", "chip", "pasta", "frozen", "canned", "cider")
+
+
+def buyers(lat, lon, radius=50000):
+    def go():
+        a = f"(around:{radius},{lat},{lon})"
+        q = (f'[out:json][timeout:60];(nwr["industrial"~"grain|mill|agricultur|food|ethanol|brewery|distillery"]{a};nwr["craft"~"miller|brewery|distillery|winery"]{a};'
+             f'nwr["shop"="farm"]{a};nwr["amenity"="marketplace"]{a};nwr["man_made"="works"]["product"]{a};nwr["man_made"="silo"]["name"]{a};);out center tags 300;')
+        data = urllib.parse.urlencode({"data": q}).encode(); j = None; err = None
+        for ep in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"):
+            try:
+                j = _http(ep, data=data, timeout=90); break
+            except Exception as e:
+                err = e
+        if j is None:
+            raise RuntimeError(f"place search unavailable: {err}")
+        out, seen = [], set()
+        for el in j.get("elements", []):
+            t = el.get("tags", {}); name = t.get("name")
+            c = el.get("center") or {"lat": el.get("lat"), "lon": el.get("lon")}
+            if not name or c.get("lat") is None:
+                continue
+            prod = (t.get("product", "") + " " + t.get("industrial", "") + " " + t.get("craft", "")).lower()
+            if t.get("amenity") == "marketplace":
+                kind = "market"
+            elif t.get("shop") == "farm":
+                kind = "farmshop"
+            elif t.get("man_made") == "silo" or any(k in prod for k in ("grain", "mill", "miller", "ethanol", "feed", "flour", "malt")):
+                kind = "grain"
+            elif any(k in prod for k in FOOD) or "brewery" in prod or "distillery" in prod or "winery" in prod:
+                kind = "food"
+            else:
+                continue
+            key = (name.lower(), round(c["lat"], 3), round(c["lon"], 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            d = math.hypot((c["lat"] - lat) * 110540, (c["lon"] - lon) * 111320 * math.cos(math.radians(lat)))
+            out.append({"name": name, "kind": kind, "lat": round(c["lat"], 5), "lon": round(c["lon"], 5), "km": round(d / 1000, 1), "what": t.get("product") or t.get("industrial") or t.get("craft") or ""})
+        out.sort(key=lambda p: p["km"])
+        return {"source": "OpenStreetMap contributors (ODbL)", "radius_km": radius // 1000, "places": out[:80]}
+    return cached("buyers", f"{lat:.2f},{lon:.2f},{radius}", go, ttl_days=30)
+
+
+# ---------- past fires near a place: NASA FIRMS yearly country archives (MODIS hotspots, no key needed) ----------
+FIRMS_ALIAS = {"United States of America": "United_States", "Russia": "Russian_Federation", "Côte d'Ivoire": "Ivory_Coast", "DR Congo": "Democratic_Republic_of_the_Congo",
+               "Democratic Republic of the Congo": "Democratic_Republic_of_the_Congo", "Tanzania": "United_Republic_of_Tanzania", "Iran": "Iran"}
+
+
+def _country_en(lat, lon):
+    def go():
+        j = _http(f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=jsonv2&zoom=3&accept-language=en", timeout=30)
+        return {"name": j.get("address", {}).get("country", "")}
+    return cached("country_en", f"{lat:.1f},{lon:.1f}", go)["name"]
+
+
+def _firms_year(country, year):
+    path = os.path.join(CACHE, f"firms_{country}_{year}.csv")
+    if not os.path.exists(path):
+        url = f"https://firms.modaps.eosdis.nasa.gov/data/country/modis/{year}/modis_{year}_{country}.csv"
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=180) as r:
+                data = r.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                open(path, "wb").close(); return []
+            raise
+        open(path, "wb").write(data)
+    rows = []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for row in csv.DictReader(f):
+            try:
+                rows.append((float(row["latitude"]), float(row["longitude"]), row["acq_date"], int(float(row.get("confidence") or 0)), float(row.get("frp") or 0)))
+            except (KeyError, ValueError):
+                continue
+    return rows
+
+
+def fire_history(lat, lon, radius_km=30):
+    def go():
+        name = _country_en(lat, lon)
+        if not name:
+            return {"covered": False, "years": []}
+        country = FIRMS_ALIAS.get(name, name.replace(" ", "_"))
+        import concurrent.futures as cf
+        yrs = list(range(2015, datetime_year()))
+        with cf.ThreadPoolExecutor(4) as ex:
+            data = dict(zip(yrs, ex.map(lambda y: _firms_year(country, y), yrs)))
+        if not any(data.values()):
+            return {"covered": False, "country": name, "years": []}
+        k = math.cos(math.radians(lat)); years, near = [], []
+        for y in yrs:
+            n = 0
+            for la, lo, d, conf, frp in data[y]:
+                if conf < 50 or abs(la - lat) > radius_km / 110 or abs(lo - lon) > radius_km / (111 * k):
+                    continue
+                km = math.hypot((la - lat) * 110.54, (lo - lon) * 111.32 * k)
+                if km <= radius_km:
+                    n += 1; near.append({"lat": la, "lon": lo, "date": d, "km": round(km, 1), "frp": frp})
+            years.append({"year": y, "count": n})
+        near.sort(key=lambda p: p["km"])
+        return {"covered": True, "country": name, "radius_km": radius_km, "years": years, "nearest": near[:60], "total": len(near),
+                "source": "NASA FIRMS, MODIS fire hotspots (yearly country archives), confidence 50% or more"}
+    return cached("firehist", f"{lat:.3f},{lon:.3f},{radius_km}", go, ttl_days=60)
+
+
+def datetime_year():
+    import datetime as _dt
+    return _dt.date.today().year
+
+
+# ---------- water near a field: lakes, ponds, rivers, canals, streams (OpenStreetMap) ----------
+def water(lat, lon, radius=10000):
+    def go():
+        k = math.cos(math.radians(lat)); dl = radius / 110540; dn = radius / (111320 * k)
+        bb = f"{lat - dl},{lon - dn},{lat + dl},{lon + dn}"
+        q = (f'[out:json][timeout:80];(way["natural"="water"](around:{radius},{lat},{lon});relation["natural"="water"](around:{radius},{lat},{lon});'
+             f'way["waterway"~"^(river|canal)$"](around:{radius},{lat},{lon});way["waterway"~"^(stream|ditch|drain)$"](around:3000,{lat},{lon});'
+             f'way["landuse"="reservoir"](around:{radius},{lat},{lon}););out tags geom({bb});')
+        data = urllib.parse.urlencode({"data": q}).encode(); j = None; err = None
+        for ep in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"):
+            try:
+                j = _http(ep, data=data, timeout=110); break
+            except Exception as e:
+                err = e
+        if j is None:
+            raise RuntimeError(f"water search unavailable: {err}")
+        out = []
+        for el in j.get("elements", []):
+            t = el.get("tags", {})
+            pts = [(p["lat"], p["lon"]) for p in el.get("geometry", []) if p]
+            for m in el.get("members", []):
+                pts += [(p["lat"], p["lon"]) for p in m.get("geometry", []) or [] if p]
+            if el.get("type") == "node":
+                pts = [(el["lat"], el["lon"])]
+            if not pts:
+                continue
+            best = min(pts, key=lambda p: (p[0] - lat) ** 2 + ((p[1] - lon) * k) ** 2)
+            km = math.hypot((best[0] - lat) * 110.54, (best[1] - lon) * 111.32 * k)
+            ww = t.get("waterway"); nat = t.get("water") or t.get("natural")
+            kind = ("well" if t.get("man_made") == "water_well" else "river" if ww in ("river", "canal") else "stream" if ww else
+                    "reservoir" if t.get("landuse") == "reservoir" or nat == "reservoir" else "pond" if nat in ("pond", "basin", "lagoon") else "lake")
+            out.append({"name": t.get("name"), "kind": kind, "km": round(km, 2), "lat": round(best[0], 5), "lon": round(best[1], 5)})
+        out.sort(key=lambda w: w["km"])
+        nearest = {}
+        for w in out:
+            nearest.setdefault(w["kind"], w)
+        named = []
+        for w in out:
+            if w["name"] and all(w["name"] != x["name"] for x in named):
+                named.append(w)
+        return {"source": "OpenStreetMap contributors (ODbL)", "nearest": nearest, "named": named[:12], "count": len(out)}
+    return cached("water", f"{lat:.3f},{lon:.3f},{radius}", go, ttl_days=30)
+
+
+# ---------- the 2050s at a place: NASA NEX-GDDP-CMIP6 (downscaled CMIP6, 0.25 deg, SSP2-4.5) ----------
+# Change factors: each model's 2049-2051 against its own 2012-2014, so model bias cancels. Applied to the NASA POWER record by the app.
+NEX = "https://ds.nccs.nasa.gov/thredds"
+NEX_MODELS = ("CanESM5", "MRI-ESM2-0", "GFDL-ESM4")
+NEX_YEARS = {"historical": (2012, 2013, 2014), "ssp245": (2049, 2050, 2051)}
+
+
+def _nex_files(model, exp, var):
+    def go():
+        with urllib.request.urlopen(urllib.request.Request(f"{NEX}/catalog/AMES/NEX/GDDP-CMIP6/{model}/{exp}/r1i1p1f1/{var}/catalog.xml", headers={"User-Agent": UA}), timeout=60) as r:
+            x = r.read().decode()
+        import re
+        return re.findall(r'name="([^"]+\.nc)"', x)
+    return cached("nexcat", f"{model},{exp},{var}", go, ttl_days=180)
+
+
+def _nex_year(model, exp, var, year, lat, lon):
+    fn = [f for f in _nex_files(model, exp, var) if f"_{year}" in f]
+    if not fn:
+        raise RuntimeError(f"no NEX file {model} {exp} {var} {year}")
+    fn = sorted(fn)[-1]  # latest version
+    u = (f"{NEX}/ncss/grid/AMES/NEX/GDDP-CMIP6/{model}/{exp}/r1i1p1f1/{var}/{fn}?var={var}&latitude={lat}&longitude={lon % 360:.3f}"
+         f"&time_start=1900-01-01&time_end=2200-01-01&accept=csv")
+    last = None
+    for _ in range(3):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": UA}), timeout=150) as r:
+                rows = r.read().decode().splitlines()[1:]
+            return [float(x.split(",")[-1]) for x in rows if x]
+        except Exception as e:
+            last = e; time.sleep(2)
+    raise last
+
+
+def future(lat, lon):
+    def go():
+        import concurrent.futures as cf
+        jobs = [(m, e, v, y) for m in NEX_MODELS for e, ys in NEX_YEARS.items() for v in ("tasmax", "pr") for y in ys]
+        with cf.ThreadPoolExecutor(12) as ex:
+            res = dict(zip(jobs, ex.map(lambda j: _nex_year(*j, lat, lon), jobs)))
+        models = []
+        for m in NEX_MODELS:
+            def avg(e, v):
+                vals = [x for y in NEX_YEARS[e] for x in res[(m, e, v, y)]]
+                return sum(vals) / len(vals)
+            def hot(e):
+                vals = [x for y in NEX_YEARS[e] for x in res[(m, e, "tasmax", y)]]
+                return sum(1 for x in vals if x - 273.15 > 30) / len(NEX_YEARS[e])
+            dT = avg("ssp245", "tasmax") - avg("historical", "tasmax")
+            dP = avg("ssp245", "pr") / avg("historical", "pr") - 1 if avg("historical", "pr") > 0 else 0.0
+            models.append({"model": m, "dT": round(dT, 2), "dP": round(dP, 3), "hot_now": round(hot("historical"), 1), "hot_2050s": round(hot("ssp245"), 1)})
+        return {"source": "NASA NEX-GDDP-CMIP6 (downscaled CMIP6), scenario SSP2-4.5 (middle of the road)", "scenario": "SSP2-4.5",
+                "periods": {"now": "2012-2014", "future": "2049-2051"}, "models": models}
+    return cached("future", f"{lat:.2f},{lon:.2f}", go)

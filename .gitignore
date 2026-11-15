@@ -11,3 +11,6 @@ data/cache/tiles/
 
 # NASA POWER downloads for training (regenerate with ml/fetch_power.py)
 ml/cache/
+
+# NASA FIRMS yearly fire archives are large (regenerated on demand)
+data/cache/firms_*.csv

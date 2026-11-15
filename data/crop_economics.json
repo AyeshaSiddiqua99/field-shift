@@ -1,0 +1,74 @@
+{
+ "maize": {
+  "price_usd_t": 297,
+  "yield_t_ha": 6.7,
+  "price_countries": 110,
+  "yield_countries": 197
+ },
+ "wheat": {
+  "price_usd_t": 284,
+  "yield_t_ha": 4.46,
+  "price_countries": 89,
+  "yield_countries": 156
+ },
+ "soybean": {
+  "price_usd_t": 550,
+  "yield_t_ha": 2.44,
+  "price_countries": 52,
+  "yield_countries": 136
+ },
+ "sorghum": {
+  "price_usd_t": 277,
+  "yield_t_ha": 3.28,
+  "price_countries": 44,
+  "yield_countries": 144
+ },
+ "millet": {
+  "price_usd_t": 425,
+  "yield_t_ha": 1.63,
+  "price_countries": 37,
+  "yield_countries": 116
+ },
+ "groundnut": {
+  "price_usd_t": 1138,
+  "yield_t_ha": 2.73,
+  "price_countries": 47,
+  "yield_countries": 147
+ },
+ "chickpea": {
+  "price_usd_t": 1017,
+  "yield_t_ha": 1.66,
+  "price_countries": 22,
+  "yield_countries": 85
+ },
+ "potato": {
+  "price_usd_t": 406,
+  "yield_t_ha": 27.94,
+  "price_countries": 110,
+  "yield_countries": 190
+ },
+ "sunflower": {
+  "price_usd_t": 470,
+  "yield_t_ha": 2.16,
+  "price_countries": 41,
+  "yield_countries": 107
+ },
+ "barley": {
+  "price_usd_t": 234,
+  "yield_t_ha": 3.92,
+  "price_countries": 75,
+  "yield_countries": 132
+ },
+ "rice": {
+  "price_usd_t": 422,
+  "yield_t_ha": 5.83,
+  "price_countries": 74,
+  "yield_countries": 151
+ },
+ "rapeseed": {
+  "price_usd_t": 468,
+  "yield_t_ha": 2.93,
+  "price_countries": 40,
+  "yield_countries": 91
+ }
+}
