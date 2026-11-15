@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Farm layers</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="layers.css">
+<script src="vendor/leaflet.js"></script>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<header class="bar"><div class="title"><i></i>FARM_LAYERS</div><div class="steps">1 The world &rarr; 2 Type an address &rarr; 3 Pick a farm &rarr; 4 See its layers</div></header>
+
+<main class="grid">
+  <section class="panel left">
+    <div class="ptitle">1-3 // FIND YOUR FARM</div>
+    <form id="placeform" class="row"><input id="place" type="search" placeholder="Type an address, village or town" aria-label="Address"><button type="submit">Search</button></form>
+    <div id="placeresults" class="results"></div>
+    <div id="map"></div>
+    <div id="farmlist" class="farmlist"><span>Type an address above. The map will go there and list the farms near it.</span></div>
+  </section>
+
+  <section class="panel right">
+    <div class="ptitle">4 // THE LAYERS FOR YOUR FARM <span class="sub" id="picked"></span></div>
+    <div id="prompt"><p>Pick a farm to see its layers.</p></div>
+    <div id="stackpanel">
+      <div class="datebar">
+        <button id="prev" type="button" aria-label="One week earlier">&larr; week</button>
+        <label>Date <input id="date" type="date" min="2000-06-01"></label>
+        <button id="next" type="button" aria-label="One week later">week &rarr;</button>
+        <label>Area <select id="winkm"><option value="6">6 km</option><option value="12" selected>12 km</option><option value="30">30 km</option></select></label>
+      </div>
+      <div class="stackwrap">
+        <div id="stackview"></div>
+        <div class="callouts">
+          <div class="call" id="c-rain"><small>RAINFALL</small><i class="cap">NASA IMERG, ~10 km pixels</i><div class="leg" id="leg-rain"></div></div>
+          <div class="call" id="c-soil"><small>SOIL MOISTURE</small><i class="cap">NASA MERRA-2, ~50 km pixels</i><div class="leg" id="leg-soil"></div></div>
+          <div class="call" id="c-heat"><small>HEAT</small><i class="cap">NASA MODIS, 1 km pixels, 8-day composite</i><div class="leg" id="leg-heat"></div></div>
+          <div class="call" id="c-veg"><small>VEGETATION</small><i class="cap">NASA MODIS NDVI, 250 m pixels, 16-day composite</i><div class="leg" id="leg-veg"></div></div>
+          <div class="call" id="c-water"><small>WATER</small><i class="cap">land and water map</i><div class="leg" id="leg-water"></div></div>
+        </div>
+        <div class="stackhint">Drag to rotate, scroll to zoom. Each layer is the real NASA image for that date; the orange beam is your farm.</div>
+      </div>
+    </div>
+  </section>
+</main>
+<script type="module" src="js/farmlayers.js"></script>
+</body>
+</html>

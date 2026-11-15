@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Field Shift - Rotation Simulator</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="styles.css">
+<script src="vendor/leaflet.js"></script>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo" aria-hidden="true"></div>
+    <div><h1>Field Shift</h1><p>Pick a field anywhere. Test crop rotations against a harder climate, using NASA data, before you plant.</p></div>
+  </div>
+  <div class="pill" id="datapill">Loading...</div>
+</header>
+
+<main class="layout">
+  <!-- INPUTS -->
+  <aside class="card inputs" aria-label="Your field">
+    <h2>1. Your field</h2>
+    <form id="placeform" class="row2">
+      <input id="place" type="search" placeholder="Search a village, town or region" aria-label="Search a place">
+      <button class="ghost" type="submit">Search</button>
+    </form>
+    <div id="placeresults" class="placeresults"></div>
+    <div class="row2">
+      <button id="geoloc" class="ghost" type="button">Use my location</button>
+    </div>
+    <p class="locline" id="locline">Pick a place, click the map, or choose a farm outline.</p>
+
+    <h2>2. Soil at this field</h2>
+    <div id="soilcard" class="soilcard"><p class="hint">Select a field to read its soil.</p></div>
+    <label for="soilmode">Soil data to use</label>
+    <select id="soilmode">
+      <option value="auto" selected>From the soil database (recommended)</option>
+      <option value="sand">Sandy (set by hand)</option>
+      <option value="loam">Loam (set by hand)</option>
+      <option value="clay">Clay (set by hand)</option>
+    </select>
+    <label for="slope">Slope <output id="o-slope">4</output>% <span class="hint" id="slopesrc"></span></label>
+    <input id="slope" type="range" min="0" max="25" step="1" value="4">
+
+    <h2>3. Water</h2>
+    <label for="wsource">Where would extra water come from?</label>
+    <select id="wsource">
+      <option value="0" selected>Rain only</option>
+      <option value="100">Small well or pond (limited)</option>
+      <option value="250">Seasonal canal or river</option>
+      <option value="500">Reliable irrigation</option>
+      <option value="custom">Set the amount myself</option>
+    </select>
+    <label for="irrig">Irrigation per season <output id="o-irrig">0</output> mm</label>
+    <input id="irrig" type="range" min="0" max="800" step="25" value="0">
+    <p class="hint" id="waterhint">Satellites and soil maps cannot tell what water a farm has access to. You choose it; the results show how much your crops would need.</p>
+
+    <h2>4. What you grow now</h2>
+    <div class="row3"><select id="c1"></select><select id="c2"></select><select id="c3"></select></div>
+    <p class="hint">Up to 3 crops, in order. Choose "Not sure" to compare against the best single crop for this site.</p>
+
+    <h2>5. What matters most</h2>
+    <label for="w-income">Make more income <output id="o-w-income">5</output></label>
+    <input id="w-income" type="range" min="0" max="10" value="5">
+    <label for="w-stab">Survive bad years <output id="o-w-stab">5</output></label>
+    <input id="w-stab" type="range" min="0" max="10" value="5">
+    <label for="w-water">Save water <output id="o-w-water">5</output></label>
+    <input id="w-water" type="range" min="0" max="10" value="5">
+    <label for="w-soil">Improve soil health and structure <output id="o-w-soil">5</output></label>
+    <input id="w-soil" type="range" min="0" max="10" value="5">
+
+    <h2>6. Future climate</h2>
+    <label for="horizon">Test the plan against</label>
+    <select id="horizon">
+      <option value="today" selected>Today's climate (2005-2024)</option>
+      <option value="2030s">The 2030s (projected for this location)</option>
+      <option value="2040s">The 2040s (projected for this location)</option>
+      <option value="custom">My own settings</option>
+    </select>
+    <p class="hint" id="projinfo">Select a field to load projections.</p>
+    <div class="presets">
+      <button type="button" class="ghost" data-p="3,-30,30">Stress test</button>
+      <button type="button" class="ghost" data-p="1,0,40">Erratic storms</button>
+    </div>
+    <label for="dT">Warming <output id="o-dT">0</output> C</label>
+    <input id="dT" type="range" min="0" max="5" step="0.1" value="0">
+    <label for="dP">Rainfall change <output id="o-dP">0</output> %</label>
+    <input id="dP" type="range" min="-40" max="30" step="1" value="0">
+    <label for="ext">Heavier downpours <output id="o-ext">0</output> %</label>
+    <input id="ext" type="range" min="-10" max="60" step="1" value="0">
+
+    <button id="run" class="primary" type="button">Simulate</button>
+    <p class="hint" id="status" role="status"></p>
+  </aside>
+
+  <!-- MAP + 3D + CHART -->
+  <section class="stage" aria-label="Map and simulation">
+    <div class="card mapcard">
+      <div class="maptools">
+        <div class="seg" id="basesel" role="group" aria-label="Map layer">
+          <button type="button" data-b="sat" class="on">Satellite</button>
+          <button type="button" data-b="nasa">NASA MODIS</button>
+          <button type="button" data-b="street">Map</button>
+        </div>
+        <button id="findfarms" class="ghost" type="button">Find farms in this view</button>
+      </div>
+      <div id="map" aria-label="Field map"></div>
+      <div id="farmlist" class="farmlist"></div>
+    </div>
+    <div class="card prompt" id="prompt">
+      <h2>Pick a farm to simulate</h2>
+      <p>Choose one of the farms listed under the map, or click a field on the satellite map. The simulation runs once you pick land, because a town centre tells you nothing about farming.</p>
+    </div>
+    <div class="card canvaswrap" id="canvaswrap">
+      <div id="labels"></div>
+      <div class="fieldtitle left" id="title-cur">Your current plan</div>
+      <div class="fieldtitle right" id="title-sug">Suggested rotation</div>
+      <div class="hud" id="hud"></div>
+      <div class="legend">
+        <span><i style="background:#4aa04a"></i>healthy</span>
+        <span><i style="background:#c9b24a"></i>maturing or stressed</span>
+        <span><i style="background:#b85c2a"></i>heat</span>
+        <span><i style="background:#eef3f7"></i>frost</span>
+        <span><i style="background:#3d2b1c"></i>wet soil</span>
+        <span><i style="background:#b08f5f"></i>dry soil</span>
+      </div>
+      <div class="playbar">
+        <button id="play" class="ghost" type="button" aria-label="Play or pause">Pause</button>
+        <input id="day" type="range" min="0" max="539" value="0" aria-label="Day">
+        <select id="yearsel" aria-label="Which year to replay"></select>
+        <select id="speed" aria-label="Speed"><option value="0.5">Slow</option><option value="1" selected>Normal</option><option value="2">Fast</option></select>
+      </div>
+    </div>
+    <div class="card chartcard">
+      <h2>Income index, year by year (every past year of NASA weather, with your climate settings)</h2>
+      <canvas id="chart" height="150"></canvas>
+      <p class="hint" id="chartnote"></p>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <aside class="card results" aria-label="Results">
+    <h2>Suggested rotations</h2>
+    <div id="reco" class="reco"><p class="hint">Select a field to begin.</p></div>
+    <h2>Season-by-season plan</h2>
+    <div id="plan"></div>
+    <h2>Compared with what you do now</h2>
+    <div id="vs"></div>
+    <div id="shift"></div>
+    <h2>Crops suited to this site</h2>
+    <div id="suited"></div>
+    <h2>Water</h2>
+    <div id="waterres"></div>
+    <h2>How far to trust this</h2>
+    <div id="trust"></div>
+    <div id="satcheck"></div>
+    <details id="assume"><summary>Assumptions and limits (read before relying on this)</summary><div id="assumebody"></div></details>
+    <button id="print" class="ghost" type="button">Print one-page summary</button>
+    <p class="hint">Data: NASA POWER weather; ISRIC SoilGrids soil; Esri and NASA GIBS imagery; OpenStreetMap farm outlines; MODIS NDVI (NASA via ORNL DAAC); CMIP6 projections via Open-Meteo (not NASA). Decision support only, not agronomic advice.</p>
+  </aside>
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

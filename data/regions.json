@@ -1,0 +1,32 @@
+{
+ "iowa": {
+  "name": "Iowa, USA (corn belt)",
+  "lat": 42.0,
+  "lon": -93.6
+ },
+ "punjab": {
+  "name": "Punjab, India",
+  "lat": 30.9,
+  "lon": 75.8
+ },
+ "pampas": {
+  "name": "Pampas, Argentina",
+  "lat": -33.0,
+  "lon": -62.0
+ },
+ "nakuru": {
+  "name": "Nakuru, Kenya (highland)",
+  "lat": -0.3,
+  "lon": 36.1
+ },
+ "kano": {
+  "name": "Kano, Nigeria (Sahel savanna)",
+  "lat": 12.3,
+  "lon": 8.7
+ },
+ "andalusia": {
+  "name": "Andalusia, Spain (Mediterranean)",
+  "lat": 37.4,
+  "lon": -5.9
+ }
+}

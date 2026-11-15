@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Field Replay - the past seasons of your land</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="replay.css">
+<script src="vendor/leaflet.js"></script>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<header class="bar">
+  <div class="title"><i></i>FIELD_REPLAY</div>
+  <div class="meta">
+    <span>LAT <b id="h-lat">--</b></span><span>LON <b id="h-lon">--</b></span>
+    <span>WEATHER <b>NASA POWER daily, 2005 to now</b></span><span class="state" id="h-state">LOADING</span>
+  </div>
+  <a class="link" href="index.html">Full simulator &rarr;</a>
+</header>
+
+<main class="grid">
+  <section class="panel pick" aria-label="Pick a field">
+    <div class="ptitle">01 // PICK YOUR FIELD</div>
+    <form id="placeform" class="row"><input id="place" type="search" placeholder="Search a village, town or region" aria-label="Search a place"><button type="submit">Search</button></form>
+    <div id="placeresults" class="results"></div>
+    <div class="row"><select id="crop" aria-label="Crop to replay"></select><select id="sow" aria-label="Sowing month"></select></div>
+    <p class="note" style="margin:0 0 6px">Optional. Already farm this land? Pick your crop and sowing month so the replay matches what you remember. If not, leave both on automatic.</p>
+    <div class="seg" id="basesel"><button data-b="sat" class="on" type="button">Satellite</button><button data-b="nasa" type="button">NASA MODIS</button><button data-b="street" type="button">Map</button></div>
+    <div class="drawbar">
+      <button id="draw" type="button">Draw my land</button><button id="undo" type="button" disabled>Undo</button>
+      <button id="finish" type="button" disabled>Finish</button><button id="clearland" type="button" disabled>Clear</button>
+    </div>
+    <p class="note" id="drawnote">Checking land you don't own yet? Press "Draw my land", then click its corners on the satellite map.</p>
+    <div id="map"></div>
+    <p class="note" id="siteline">Search a place to see the farms near it.</p>
+    <div id="farmlist" class="farmlist"></div>
+  </section>
+
+  <section class="panel prompt" id="prompt">
+    <div class="ptitle">02 // PICK A FARM, THEN SEE ITS HISTORY</div>
+    <p>Choose one of the farms listed under the map, click a field on the satellite map, or press "Draw my land" to outline your own.</p>
+    <p class="note">You will then see the weather and soil of that land for every season since 2006, and what the climate is projected to do next. Nothing is shown until you pick land, because a town centre or a point with no field tells you nothing about farming.</p>
+  </section>
+
+  <section class="panel stage" aria-label="Layers and soil bucket">
+    <div class="ptitle">02 // WHAT THE SATELLITES AND WEATHER SAW THAT DAY</div>
+    <div class="stagebody">
+      <div class="stackwrap">
+        <div id="stackview" aria-label="3D stack of NASA layers over the selected farm"></div>
+        <div class="callouts">
+          <div class="call" id="c-rain"><small>RAINFALL</small><b>--</b><i class="cap">NASA IMERG, ~10 km pixels</i><div class="leg" id="leg-rain"></div></div>
+          <div class="call" id="c-soil"><small>SOIL MOISTURE</small><b>--</b><i class="cap">NASA MERRA-2, ~50 km pixels</i><div class="leg" id="leg-soil"></div></div>
+          <div class="call" id="c-heat"><small>HEAT</small><b>--</b><i class="cap">NASA MODIS, 1 km pixels, 8-day composite</i><div class="leg" id="leg-heat"></div></div>
+          <div class="call" id="c-veg"><small>VEGETATION</small><b>--</b><i class="cap">NASA MODIS NDVI, 250 m pixels</i><div class="leg" id="leg-veg"></div></div>
+          <div class="call" id="c-water"><small>WATER IN YOUR SOIL (MODEL)</small><b>--</b><i class="cap">land and water map (3D layer below)</i><div class="leg" id="leg-water"></div></div>
+        </div>
+        <div class="winsel">Area shown <select id="winkm" aria-label="Area shown in the 3D stack"><option value="6">6 km</option><option value="12" selected>12 km</option><option value="30">30 km</option></select></div>
+        <div class="stackhint">Drag to rotate, scroll to zoom. Each layer is the real NASA image for that day; the orange beam is your farm.</div>
+      </div>
+      <div class="bucketwrap">
+        <svg id="bucket" viewBox="0 0 260 330" role="img" aria-label="Soil water bucket"></svg>
+        <p class="note center" id="bucketnote">The bucket: plant-available water in the root zone.</p>
+      </div>
+    </div>
+    <div class="hud" id="hud">--</div>
+  </section>
+
+  <section class="panel strip" aria-label="18 seasons">
+    <div class="ptitle">03 // YOUR LAST <span id="nseas">18</span> SEASONS <span class="sub" id="striptitle"></span></div>
+    <div class="tiles" id="tiles"></div>
+    <div class="tilekey"><span><i style="background:#2bd4a0"></i>soil stayed moist</span><span><i style="background:#f2b84b"></i>some stress</span><span><i style="background:#f0605d"></i>long dry spell</span><span class="ring">&#9711; = one of your 3 hardest</span></div>
+    <div class="ynat" id="ynat"></div>
+  </section>
+
+  <section class="panel future" aria-label="Future outlook" style="display:none">
+    <div class="ptitle">03b // THE NEXT DECADES, FOR THIS LAND</div>
+    <div id="futurebody"></div>
+  </section>
+
+  <section class="panel chart" aria-label="Season timeline">
+    <div class="ptitle">04 // THE SEASON, DAY BY DAY <span class="sub" id="chartsub"></span></div>
+    <canvas id="chart" height="230"></canvas>
+    <div class="playbar"><button id="play" type="button">Pause</button><input id="day" type="range" min="0" max="200" value="0" aria-label="Day of season"><select id="speed" aria-label="Speed"><option value="0.5">Slow</option><option value="1" selected>Normal</option><option value="2.5">Fast</option></select></div>
+  </section>
+
+  <section class="panel year" aria-label="Year summary">
+    <div class="ptitle">05 // DOES THIS MATCH YOUR MEMORY?</div>
+    <div id="yearcard"></div>
+    <div class="match" id="match"></div>
+    <p class="note" id="matchtally"></p>
+  </section>
+
+  <section class="panel public" aria-label="Public data checks">
+    <div class="ptitle">06 // CROSS-CHECKS FROM OTHER TRUSTED PUBLIC DATA</div>
+    <div id="pubyield"></div>
+    <div id="pubfire"></div>
+    <p class="note" id="pubsrc"></p>
+  </section>
+</main>
+<script type="module" src="js/replay.js"></script>
+</body>
+</html>
