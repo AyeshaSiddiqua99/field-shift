@@ -1,0 +1,12 @@
+# Render Blueprint: in Render choose New > Blueprint and pick this repository.
+services:
+  - type: web
+    name: cropahead
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /cropahead.html
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.14.2"

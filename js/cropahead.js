@@ -11,10 +11,28 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const money = v => '$' + Math.round(v).toLocaleString('en-US');
 const money2 = v => '$' + v.toFixed(2);
 const isoAgo = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
-async function getJSON(url, ms = 60000) {
+async function getJSONOnce(url, ms) {
   const ac = new AbortController(), t = setTimeout(() => ac.abort(), ms);
-  try { const r = await fetch(url, { signal: ac.signal }), j = await r.json(); if (!r.ok || j.error) throw new Error(j.error || 'request failed'); return j; }
-  catch (e) { throw new Error(e.name === 'AbortError' ? 'took too long' : e.message); } finally { clearTimeout(t); }
+  try {
+    const r = await fetch(url, { signal: ac.signal }); let j = null;
+    try { j = await r.json(); } catch { throw Object.assign(new Error(`server answered ${r.status}`), { retry: true }); } // e.g. a 502 page from the public link
+    if (!r.ok || j.error) throw Object.assign(new Error(j.error || 'request failed'), { retry: r.status >= 500 && !/unavailable|NoData|no NASA/i.test(j.error || '') });
+    return j;
+  } catch (e) { if (e.name === 'AbortError') throw new Error('took too long'); if (e instanceof TypeError) e.retry = true; throw e; } // TypeError = the network dropped
+  finally { clearTimeout(t); }
+}
+// a flaky connection (or the public link) can drop one request: try again twice before giving up
+async function getJSON(url, ms = 60000, tries = 3) {
+  for (let i = 1; ; i++) {
+    try { return await getJSONOnce(url, ms); }
+    catch (e) { if (!e.retry || i >= tries) throw e; await new Promise(r => setTimeout(r, 1200 * i)); }
+  }
+}
+// the app's own small data files: start loading as soon as the page opens, keep them once loaded
+const STATIC = {};
+function staticData() {
+  const get = (k, u) => S[k] ? Promise.resolve(S[k]) : (STATIC[k] ||= getJSON(u, 30000, 4).then(j => (S[k] = j)).catch(e => { STATIC[k] = null; throw e; }));
+  return Promise.all([get('econ', 'data/crop_economics.json'), get('rot', 'data/rotation.json'), get('countryCrops', 'data/country_crops.json')]);
 }
 function countUp(el, to, fmt = v => Math.round(v), ms = 1400) {
   const t0 = performance.now();
@@ -127,23 +145,36 @@ async function openField(site) {
   q('#ftitle').textContent = site.name; q('#fwhere').textContent = `near ${S.name}`;
   for (const [k] of CH) body(k).innerHTML = `<div class="wait">Getting the facts...</div>`;
   showHero(site); chapter('space'); renderSpace(site);
-  [S.econ, S.rot, S.countryCrops] = await Promise.all([S.econ || getJSON('data/crop_economics.json'), S.rot || getJSON('data/rotation.json'), S.countryCrops || getJSON('data/country_crops.json')]);
-  if (my !== S.tok) return;
+  // every step loads on its own: one slow or failed source never freezes the others
   const L = `lat=${site.lat.toFixed(4)}&lon=${site.lon.toFixed(4)}`;
+  const stat = staticData();
   const hist = getJSON(`/api/history?${L}`, 90000).catch(() => null);
-  hist.then(h => { if (my === S.tok) { S.hist = h; renderPast(h); renderRotate(); } });
+  hist.then(h => { if (my === S.tok) { S.hist = h; renderPast(h); if (S.rot) renderRotate(); } });
   hist.then(h => { if (my === S.tok) renderYear(L, h); });
   const power = getJSON(`/api/power?${L}`, 120000), soil = getJSON(`/api/soil?${L}`, 60000).catch(() => null), slope = getJSON(`/api/slope?${L}`, 30000).catch(() => null);
-  Promise.all([power, soil, slope, hist]).then(([p, s, sl, h]) => {
+  renderWater(L, my);
+  stat.then(() => { if (my === S.tok) { renderRotate(); renderSell(L, my); } })
+    .catch(() => { if (my === S.tok) for (const k of ['rotate', 'sell']) failBox(k, site); });
+  Promise.all([power, soil, slope, hist, stat]).then(([p, s, sl, h]) => {
     if (my !== S.tok) return;
     const sp = s ? soilFromLayers(s.layers) : null, farm = { soil: 'loam', sp: sp || undefined, slope: sl ? Math.round(sl.slope) : 3, irrig: 0 };
     const c = prepClimate(p), table = evalCrops(c, farm);
     S.sim = { c, table, farm, sp, raw: p };
     renderCrops(table, sp, h); renderGrow(); renderNeed(); renderNext();
     loadFuture().catch(() => {}); // warm up the 2050s view in the background
-  }).catch(e => { if (my === S.tok) for (const k of ['crops', 'grow']) body(k).innerHTML = `<p class="say">Could not get the weather for this field (${esc(e.message)}).</p>`; });
-  renderRotate(); renderWater(L, my); renderSell(L, my);
+  }).catch(e => {
+    if (my !== S.tok) return;
+    for (const k of ['crops', 'grow']) failBox(k, site, e.message);
+    q('#next').innerHTML = `<div class="warn">The connection to NASA's weather service dropped (${esc(e.message)}). <button class="chip" id="nextretry">↻ Try again</button></div>`;
+    q('#nextretry').onclick = () => openField(site);
+    const w = q('#wneed'); if (w) w.innerHTML = '';
+  });
 }
+function failBox(k, site, why) {
+  body(k).innerHTML = `<p class="say">This part could not load${why ? ` (${esc(why)})` : ''}. The internet connection may be slow.</p><button class="big" type="button">↻ Try again</button>`;
+  body(k).querySelector('button').onclick = () => openField(site);
+}
+staticData().catch(() => {}); // start loading the app's own data files right away
 
 // ----- chapter 1: from space -----
 let stack = null; const stackBox = document.createElement('div'); stackBox.style.cssText = 'position:absolute;inset:0';
@@ -516,70 +547,113 @@ function renderWater(L, my) {
 // ---------- grow it: watch both plans grow through real past seasons ----------
 let grow = null;
 const BUDGET_BU = { maize: 193, soybean: 52, wheat: 96 }, PRICE_KEY = { maize: 'Corn', soybean: 'Soybeans', wheat: 'Wheat' };
-function renderGrow() {
-  const b = body('grow'); if (!S.sim) return;
-  const { c, table, farm } = S.sim, main = mainCrop(), rot = rotationFor(main), years = c.yStarts.slice(-(rot.length + 1)); // one full rotation, then the main crop again (the year rotation pays back)
-  const plansIds = [years.map(() => main), years.map((_, i) => rot[i % rot.length])];
-  const R = S.rot, money_ok = S.ontario && plansIds.flat().every(id => BUDGET_BU[id]);
+// The next four seasons (2027-2030). Nobody knows that weather, so we grow both plans through every real season
+// since 2006 as a possible future, each shifted by NASA's projected warming for the target year, and show the range.
+const FUTURE_YEARS = [2027, 2028, 2029, 2030];
+async function renderGrow() {
+  const b = body('grow'); if (!S.sim) return; const my = S.tok;
+  b.innerHTML = `<span class="tag">Simulation · the next 4 seasons</span><h2>Watch your field grow: 2027 to 2030</h2><div class="wait" style="--c:var(--leaf)">Growing both plans through 20 possible futures...</div>`;
+  let fut = null; try { fut = await loadFuture(); } catch { fut = null; }
+  if (my !== S.tok) return;
+  await new Promise(r => setTimeout(r, 30)); // let the page paint first
+  const { c, table, farm, raw } = S.sim, main = mainCrop(), rot = rotationFor(main), R = S.rot;
+  const nextOrder = rot.length > 1 ? [...rot.slice(1), rot[0]] : rot;          // start with next season's suggestion
+  const plansIds = [FUTURE_YEARS.map(() => main), FUTURE_YEARS.map((_, i) => nextOrder[i % nextOrder.length])];
+  const money_ok = S.ontario && plansIds.flat().every(id => BUDGET_BU[id]);
   const COST = { maize: R.omafa.corn_operating_cost_ac, soybean: R.omafa.soy_operating_cost_ac, wheat: R.omafa.wheat_operating_cost_ac };
-  const plans = plansIds.map((ids, k) => ({
-    label: k ? 'Our rotation' : 'Same crop every year',
-    seasons: ids.map((id, si) => {
-      const cr = CROP[id], ys = years[si], plant = ys + table[id].doy - 1, prev = si ? ids[si - 1] : main;
-      const base = seasonSim(c, cr, farm, plant, DEFAULT_P, true)?.rel ?? 0;
-      const pen = prev === id ? (id === 'soybean' ? R.omafa.soy_after_soy_loss_pct : R.omafa.corn_after_corn_loss_pct) / 100 : 0;
-      const rel = base * (1 - pen), avg = table[id].meanRel || 1;
-      const bu = BUDGET_BU[id] ? BUDGET_BU[id] * rel / avg : null, cad = bu && money_ok ? bu * R.prices.cad_t[PRICE_KEY[id]] / R.prices.bu_per_t[PRICE_KEY[id]] - COST[id] : null;
-      const i0 = Math.max(60, plant - 12), i1 = Math.min(c.n - 1, plant + cr.days + 18);
-      return { crop: { id, name: ENGINE_NAME[id], emo: ENGINE_EMO[id] }, year: c.yearOf[plant], plant, i0, i1, tr: trace(c, cr, farm, plant, DEFAULT_P, i0, i1), rel, pen, bu, cad };
-    }),
-  }));
-  const tot = plans.map(p => p.seasons.reduce((s, x) => s + (money_ok ? x.cad : x.rel * 100), 0));
-  b.innerHTML = `<span class="tag">Simulation with real NASA weather</span><h2>Watch your field grow: same crop vs rotation</h2>
-    <p class="say">Two halves of your field, grown through the <b>last ${years.length} real seasons</b> of NASA weather. <b>Left:</b> ${ENGINE_EMO[main]} ${ENGINE_NAME[main].toLowerCase()} every year. <b>Right:</b> ${rot.map(id => ENGINE_EMO[id] + ' ' + ENGINE_NAME[id].toLowerCase()).join(' → ')}. Brown leaves = thirsty plants. Dark soil = wet.</p>
+  // NASA NEX-GDDP-CMIP6 change between 2012-14 and 2049-51, spread evenly over those 37 years
+  const ms = fut?.models || [], kT = ms.length ? ms.reduce((s, m) => s + m.dT, 0) / ms.length / 37 : 0, kP = ms.length ? ms.reduce((s, m) => s + m.dP, 0) / ms.length / 37 : 0;
+  const ysOf = y => Math.round((Date.UTC(y, 0, 1) - Date.UTC(2005, 0, 1)) / 864e5);
+  const ids = [...new Set(plansIds.flat())];
+  const years = []; for (let y = 2006; y <= 2025; y++) { const ys = ysOf(y); if (ids.every(id => ys + table[id].doy - 1 + 365 <= c.n)) years.push(y); }
+  const climCache = new Map(), clim = (W, Y) => {
+    const dT = Math.round(kT * (Y - W) * 100) / 100, dP = Math.round(kP * (Y - W) * 1000) / 1000, key = dT + '|' + dP;
+    if (!climCache.has(key)) climCache.set(key, dT === 0 && dP === 0 ? c : prepClimate(raw, { dT, dP, ext: 0 }));
+    return climCache.get(key);
+  };
+  const season = (id, prev, W, Y) => {
+    const cc = clim(W, Y), cr = CROP[id], plant = ysOf(W) + table[id].doy - 1;
+    const base = seasonSim(cc, cr, farm, plant, DEFAULT_P, true)?.rel ?? 0;
+    const pen = prev === id ? (id === 'soybean' ? R.omafa.soy_after_soy_loss_pct : R.omafa.corn_after_corn_loss_pct) / 100 : 0;
+    const rel = base * (1 - pen), avg = table[id].meanRel || 1;
+    const bu = BUDGET_BU[id] ? BUDGET_BU[id] * rel / avg : null, cad = bu && money_ok ? bu * R.prices.cad_t[PRICE_KEY[id]] / R.prices.bu_per_t[PRICE_KEY[id]] - COST[id] : null;
+    return { crop: { id, name: ENGINE_NAME[id], emo: ENGINE_EMO[id] }, year: Y, like: W, cc, plant, rel, pen, bu, cad };
+  };
+  const val = x => money_ok ? x.cad : x.rel * 100;
+  // scenario k: the four seasons take the weather of four real years in a row, starting at years[k]
+  const scen = years.map((_, k) => {
+    const res = plansIds.map(list => list.map((id, i) => season(id, i ? list[i - 1] : main, years[(k + i) % years.length], FUTURE_YEARS[i])));
+    const tot = res.map(r => r.reduce((s, x) => s + val(x), 0));
+    return { k, res, tot, d: tot[1] - tot[0] };
+  });
+  const sorted = [...scen].sort((a, b2) => a.d - b2.d), typ = sorted[Math.floor(sorted.length / 2)];
+  const pct = (arr, p) => { const s = [...arr].sort((a, b2) => a - b2); return s[Math.min(s.length - 1, Math.max(0, Math.round(p * (s.length - 1))))]; };
+  const totA = scen.map(s => s.tot[0]), totB = scen.map(s => s.tot[1]), N = scen.length, band = money_ok ? 60 : 3; // within $60 an acre over 4 seasons ($15 a year) counts as "about the same"
+  const ahead = scen.filter(s => s.d > band).length, same = scen.filter(s => Math.abs(s.d) <= band).length, behind = N - ahead - same;
+  const fmtV = v => money_ok ? `${v < 0 ? '−' : ''}${money(Math.abs(v))}` : `${Math.round(v / FUTURE_YEARS.length)}%`;
+  // the typical future is what the 3D field plays
+  const plans = typ.res.map((list, k) => ({ label: k ? 'Our rotation' : 'Same crop every year', seasons: list.map(x => {
+    const cr = CROP[x.crop.id], i0 = Math.max(60, x.plant - 12), i1 = Math.min(c.n - 1, x.plant + cr.days + 18);
+    return { ...x, i0, i1, tr: trace(x.cc, cr, farm, x.plant, DEFAULT_P, i0, i1) };
+  }) }));
+  // seasons in the 3D view are lined up by their real weather year; both halves share it
+  const mx = Math.max(...scen.map(s => Math.abs(s.d)), 1), W = 600, H = 150, bw = W / N;
+  const chart = `<svg viewBox="0 0 ${W} ${H + 24}" style="width:100%;max-width:760px" role="img" aria-label="Difference between the rotation and corn every year in each possible future">
+    <line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke="rgba(255,255,255,.35)"/>
+    ${sorted.map((s, i) => { const h = Math.abs(s.d) / mx * (H / 2 - 6), up = s.d >= 0; return `<rect x="${i * bw + 2}" width="${bw - 4}" y="${up ? H / 2 - h : H / 2}" height="${Math.max(2, h)}" rx="3" fill="${s.d > band ? '#5ee08a' : s.d < -band ? '#ff6b6b' : '#ffc94a'}"><title>Weather like ${years[s.k]}-${years[(s.k + 3) % N]}: ${s.d >= 0 ? '+' : '−'}${money_ok ? money(Math.abs(s.d)) : Math.round(Math.abs(s.d)) + ' pts'}</title></rect>`; }).join('')}
+    <text x="0" y="12" fill="#b3c0dd" font-size="12">rotation ahead</text><text x="0" y="${H - 4}" fill="#b3c0dd" font-size="12">corn every year ahead</text>
+    <text x="${W / 2}" y="${H + 18}" fill="#b3c0dd" font-size="12" text-anchor="middle">each bar = one possible future for 2027-2030 (sorted)</text></svg>`;
+  b.innerHTML = `<span class="tag">Simulation · the next 4 seasons</span><h2>Watch your field grow: 2027 to 2030</h2>
+    <p class="say"><b>Left:</b> ${ENGINE_EMO[main]} ${ENGINE_NAME[main].toLowerCase()} every year. <b>Right:</b> our plan, starting next season: ${plansIds[1].map((id, i) => `${ENGINE_EMO[id]} ${ENGINE_NAME[id].toLowerCase()} (${FUTURE_YEARS[i]})`).join(' → ')}. Brown leaves = thirsty plants. Dark soil = wet.</p>
+    <div class="warn" style="font-size:17px;margin-bottom:12px">🔮 Nobody can know the weather of 2027 to 2030. So we grew both plans through <b>${N} possible futures</b>: each one is a run of real weather that happened here (2006 to 2025), ${ms.length ? `<b>warmed by NASA's climate projection</b> for those years` : 'without a warming adjustment (NASA projection unavailable)'}. The field below plays the <b>typical</b> one.</div>
     <div style="position:relative"><div id="gview" style="height:min(60vh,520px);border-radius:18px;overflow:hidden;background:#9fd3ff"></div>
       <div id="ghud" style="position:absolute;left:12px;top:12px;right:12px;display:flex;justify-content:space-between;gap:8px;pointer-events:none;flex-wrap:wrap">
         <span class="chip" style="background:rgba(5,11,31,.75)" id="gl0"></span><span class="chip" style="background:rgba(5,11,31,.75);font-size:18px" id="gdate"></span><span class="chip" style="background:rgba(5,11,31,.75)" id="gl1"></span></div>
-      <div style="position:absolute;left:12px;bottom:12px;display:flex;gap:8px"><button class="chip" id="gplay" style="background:rgba(5,11,31,.8)">⏸ Pause</button><button class="chip" id="grst" style="background:rgba(5,11,31,.8)">⟲ Start again</button>
+      <div style="position:absolute;left:12px;bottom:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="chip" id="gplay" style="background:rgba(5,11,31,.8)">⏸ Pause</button><button class="chip" id="grst" style="background:rgba(5,11,31,.8)">⟲ Start again</button>
         <button class="chip" data-sp="0.8" style="background:rgba(5,11,31,.8)">🐢 Slow</button><button class="chip" data-sp="2.2" style="background:rgba(5,11,31,.8)">🐇 Fast</button></div>
       <div style="position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(255,255,255,.2)"><i id="gbar" style="display:block;height:100%;width:0;background:var(--sun)"></i></div></div>
-    <div class="vs" id="gres" style="margin-top:16px"></div><div id="gsum"></div>
-    <details class="how"><summary>How does the simulation work?</summary>Each day of each season, our crop model (FAO-56 water balance with NASA POWER rain, temperature and sunshine, on your SoilGrids soil) works out how much water is in the soil, how thirsty the crop is, heat and frost. That sets the plant size and colour you see and the harvest. Planting the same crop twice in a row loses ${R.omafa.corn_after_corn_loss_pct}% (corn) or ${R.omafa.soy_after_soy_loss_pct}% (soybeans), the figures in Ontario's 2026 crop budgets. ${money_ok ? `Bushels use Ontario's budget yields (corn ${BUDGET_BU.maize}, soybeans ${BUDGET_BU.soybean}, wheat ${BUDGET_BU.wheat} bu/acre) scaled by how good each season was here; dollars = sales at Statistics Canada Ontario prices (${esc(R.prices.month)}) minus Ontario's 2026 budget operating costs per acre (corn $${COST.maize}, soybeans $${COST.soybean}, wheat $${COST.wheat}, grain only). Land, machinery and your own time are not included.` : 'Harvests are shown as % of a full harvest.'} It does not include pests, disease or soil building, which the field trials in step 4 show make rotation pay even more.</details>`;
-  const rows = plans[0].seasons.map((_, si) => si);
-  const shown = new Set();
-  const fmt = x => money_ok ? `${Math.round(x.bu)} bushels · <span title="Sales minus seed, fertilizer, sprays, fuel and other growing costs, per acre">${x.cad < 0 ? 'loses ' : 'earns '}${money(Math.abs(x.cad))} an acre</span>` : `${Math.round(x.rel * 100)}% of a full harvest`;
-  const draw = done => {
-    q('#gres').innerHTML = (money_ok ? `<p style="margin:0 0 6px;color:var(--mut);font-size:16px">💵 <b style="color:var(--ink)">"Earns"</b> = what you sell the harvest for, minus what it cost to grow (seed, fertilizer, sprays, fuel, drying, trucking), for one acre. Land rent, machinery and your own time are not taken off.</p>` : '') + `<div class="row" style="font-weight:800;color:var(--mut)"><span>Harvest</span><span style="display:flex;justify-content:space-between"><span>Same crop every year</span><span>Our rotation</span></span><span></span></div>` + rows.map(si => {
-      if (!shown.has(si)) return `<div class="row"><span>${plans[0].seasons[si].year}</span><span style="color:var(--mut)">growing...</span><span></span></div>`;
-      const a = plans[0].seasons[si], r = plans[1].seasons[si];
-      return `<div class="row"><span>${a.year}</span><span style="display:flex;justify-content:space-between;gap:8px"><b>${a.crop.emo} ${fmt(a)}${a.pen ? ' <small style="color:var(--bad)">(same crop again)</small>' : ''}</b><b>${r.crop.emo} ${fmt(r)}</b></span><span></span></div>`;
-    }).join('');
-    if (done) {
-      const d = tot[1] - tot[0];
-      q('#gsum').innerHTML = `<div class="money"><span class="tag" style="--c:var(--leaf)">Result over ${years.length} seasons</span><p class="say" style="margin:8px 0">${money_ok
-        ? `Money left after growing costs, over ${years.length} seasons. Same crop: <b>${money(tot[0])}</b> an acre. Rotation: <b>${money(tot[1])}</b> an acre. Difference: <b style="color:${d >= 0 ? 'var(--leaf)' : 'var(--bad)'}">${d >= 0 ? '+' : '−'}${money(Math.abs(d))} an acre</b>${S.site?.ha ? `, about <b>${d >= 0 ? '+' : '−'}${money(Math.abs(d) * S.site.ha * 2.47105)}</b> for your field` : ''}.</p>
-          <p style="font-size:17px;margin:6px 0 0">${Math.abs(d) < 60 ? '👉 Over these seasons both plans make <b>about the same money</b>, but the rotation field ends up healthier. ' : d < 0 ? '👉 At today\'s prices corn every year made more money over these few seasons. ' : '👉 The rotation made more money, even over these few seasons. '}This test only counts weather, water and the corn-after-corn loss. The <b>long-term trials in step 4</b> also count healthier soil, fewer pests and drought protection, and there the rotation earned more ($${S.rot.elora.net_ac['Corn, corn, soybean, wheat']} vs $${S.rot.elora.net_ac['Corn every year']} an acre a year).`
-        : `Same crop: <b>${Math.round(tot[0] / years.length)}%</b> of a full harvest on average. Rotation: <b>${Math.round(tot[1] / years.length)}%</b>.`}</p></div>`;
-    }
+    <div class="vs" id="gres" style="margin-top:16px"></div>
+    <div class="money"><span class="tag" style="--c:var(--leaf)">Across all ${N} possible futures, 2027 to 2030</span>
+      <div class="price" style="margin-top:10px">
+        <div><span>Typical future: corn every year</span><b>${fmtV(pct(totA, 0.5))}</b><span>${money_ok ? 'an acre over 4 seasons, after costs' : 'of a full harvest, on average'}</span></div>
+        <div><span>Typical future: our rotation</span><b>${fmtV(pct(totB, 0.5))}</b><span>${money_ok ? 'an acre over 4 seasons, after costs' : 'of a full harvest, on average'}</span></div>
+        <div><span>Bad future (1 in 10): corn every year</span><b>${fmtV(pct(totA, 0.1))}</b><span>&nbsp;</span></div>
+        <div><span>Bad future (1 in 10): our rotation</span><b>${fmtV(pct(totB, 0.1))}</b><span>&nbsp;</span></div></div>
+      ${(() => { const dT = pct(totB, 0.5) - pct(totA, 0.5), dB = pct(totB, 0.1) - pct(totA, 0.1), w = v => money_ok ? money(Math.abs(v)) + ' an acre' : Math.round(Math.abs(v) / FUTURE_YEARS.length) + ' points';
+        return `<p class="say" style="margin:10px 0 4px">👉 In a <b>typical</b> future, ${Math.abs(dT) <= band ? 'both plans earn <b>about the same</b>' : dT > 0 ? `the rotation earns <b>${w(dT)} more</b>` : `corn every year earns <b>${w(dT)} more</b>`}. In a <b>bad</b> future, ${Math.abs(dB) <= band ? 'both plans do about the same' : dB > 0 ? `the rotation <b style="color:var(--leaf)">protects ${w(dB)}</b>` : `corn every year does <b>${w(dB)} better</b>`}.</p>`; })()}
+      <p class="say" style="margin:8px 0">The rotation comes out <b style="color:var(--leaf)">ahead in ${ahead}</b>, <b style="color:var(--sun)">about the same in ${same}</b> and <b style="color:var(--bad)">behind in ${behind}</b> of ${N} possible futures.</p>
+      ${chart}
+      <p style="font-size:17px;margin:8px 0 0">This counts weather, water and the same-crop loss only. The <b>long-term trials in step 4</b> also count healthier soil, fewer pests and drought protection; there the rotation earned more ($${R.elora.net_ac['Corn, corn, soybean, wheat']} vs $${R.elora.net_ac['Corn every year']} an acre a year).</p></div>
+    <details class="how"><summary>How does the simulation work?</summary>Daily weather cannot be forecast years ahead, so this is a set of <b>possible futures</b>, not a prediction. Each future takes four real growing seasons in a row from the NASA POWER record at your field (2006 to 2025) and adds the warming and rain change that NASA's NEX-GDDP-CMIP6 projections give for 2027 to 2030 (the 3-model change to the 2050s, spread evenly over the years). Our crop model (FAO-56 water balance on your SoilGrids soil) then grows each crop day by day: soil water, thirst, heat and frost. Planting the same crop twice in a row loses ${R.omafa.corn_after_corn_loss_pct}% (corn) or ${R.omafa.soy_after_soy_loss_pct}% (soybeans), Ontario's 2026 budget figures; 2026 is assumed to be ${ENGINE_NAME[main].toLowerCase()}, like the years before. ${money_ok ? `Bushels use Ontario's budget yields (corn ${BUDGET_BU.maize}, soybeans ${BUDGET_BU.soybean}, wheat ${BUDGET_BU.wheat} bu/acre) scaled by how good each season is; dollars = sales at today's Statistics Canada Ontario prices (${esc(R.prices.month)}) minus Ontario's 2026 operating costs (corn $${COST.maize}, soybeans $${COST.soybean}, wheat $${COST.wheat}, grain only). Future prices and costs will differ.` : 'Harvests are shown as % of a full harvest.'} Pests, disease and soil building are not modelled.</details>`;
+  const rows = FUTURE_YEARS.map((_, si) => si), shown = new Set();
+  const fmt = x => money_ok ? `${Math.round(x.bu)} bushels · ${x.cad < 0 ? 'loses ' : 'earns '}${money(Math.abs(x.cad))} an acre` : `${Math.round(x.rel * 100)}% of a full harvest`;
+  const draw = () => {
+    q('#gres').innerHTML = (money_ok ? `<p style="margin:0 0 6px;color:var(--mut);font-size:16px">💵 <b style="color:var(--ink)">"Earns"</b> = what you sell the harvest for, minus what it cost to grow (seed, fertilizer, sprays, fuel, drying, trucking), for one acre.</p>` : '') +
+      `<div class="row" style="font-weight:800;color:var(--mut)"><span>Typical future</span><span style="display:flex;justify-content:space-between"><span>Same crop every year</span><span>Our rotation</span></span><span></span></div>` + rows.map(si => {
+        const a = plans[0].seasons[si], r = plans[1].seasons[si], lbl = `${a.year} <small style="color:var(--mut)">weather like ${a.like}</small>`;
+        if (!shown.has(si)) return `<div class="row"><span>${lbl}</span><span style="color:var(--mut)">growing...</span><span></span></div>`;
+        return `<div class="row"><span>${lbl}</span><span style="display:flex;justify-content:space-between;gap:8px"><b>${a.crop.emo} ${fmt(a)}${a.pen ? ' <small style="color:var(--bad)">(same crop again)</small>' : ''}</b><b>${r.crop.emo} ${fmt(r)}</b></span><span></span></div>`;
+      }).join('');
   };
-  draw(false);
+  draw();
   const container = q('#gview');
   const start = () => {
     if (grow || !container.offsetWidth) return;
     grow = createGrowSim(container, plans, c, (day, di, n, done) => {
-      const dt = new Date(Date.UTC(2005, 0, 1) + day.i * 864e5);
-      q('#gdate').textContent = `📅 ${dt.toLocaleDateString('en-CA', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`;
-      const a = plans[0].seasons[day.si], r = plans[1].seasons[day.si];
-      q('#gl0').textContent = `◀ Same: ${a.crop.emo} ${a.crop.name}`; q('#gl1').textContent = `Rotation: ${r.crop.emo} ${r.crop.name} ▶`;
+      const s0 = plans[0].seasons[day.si], dt = new Date(Date.UTC(2005, 0, 1) + day.i * 864e5);
+      q('#gdate').textContent = `📅 ${dt.toLocaleDateString('en-CA', { day: 'numeric', month: 'short', timeZone: 'UTC' })} ${s0.year} · weather like ${s0.like}`;
+      const r = plans[1].seasons[day.si];
+      q('#gl0').textContent = `◀ Same: ${s0.crop.emo} ${s0.crop.name}`; q('#gl1').textContent = `Rotation: ${r.crop.emo} ${r.crop.name} ▶`;
       q('#gbar').style.width = (di / (n - 1) * 100) + '%';
-      for (const si of rows) if (!shown.has(si) && (day.si > si || (day.si === si && day.i >= Math.max(plans[0].seasons[si].plant + CROP[plans[0].seasons[si].crop.id].days, plans[1].seasons[si].plant + CROP[plans[1].seasons[si].crop.id].days)))) { shown.add(si); draw(false); }
-      if (done) { rows.forEach(si => shown.add(si)); draw(true); q('#gplay').textContent = '▶ Play again'; }
+      for (const si of rows) if (!shown.has(si) && (day.si > si || (day.si === si && day.i >= Math.max(plans[0].seasons[si].plant + CROP[plans[0].seasons[si].crop.id].days, plans[1].seasons[si].plant + CROP[plans[1].seasons[si].crop.id].days)))) { shown.add(si); draw(); }
+      if (done) { rows.forEach(si => shown.add(si)); draw(); q('#gplay').textContent = '▶ Play again'; }
     });
   };
   if (grow) { grow.destroy(); grow = null; }
   onShow.grow = () => setTimeout(start, 120);
   if (q('#ch-grow').classList.contains('show')) onShow.grow();
   b.querySelector('#gplay').onclick = () => { if (!grow) return; const on = grow.play(); q('#gplay').textContent = on ? '⏸ Pause' : '▶ Play'; };
-  b.querySelector('#grst').onclick = () => { if (!grow) return; shown.clear(); q('#gsum').innerHTML = ''; draw(false); grow.restart(); q('#gplay').textContent = '⏸ Pause'; };
+  b.querySelector('#grst').onclick = () => { if (!grow) return; shown.clear(); draw(); grow.restart(); q('#gplay').textContent = '⏸ Pause'; };
   b.querySelectorAll('[data-sp]').forEach(x => x.onclick = () => grow?.setSpeed(+x.dataset.sp));
 }
+

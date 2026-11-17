@@ -49,6 +49,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         u = urlparse(self.path)
+        if u.path == "/":  # the shared link opens CropAhead
+            self.send_response(302); self.send_header("Location", "/cropahead.html"); self.end_headers()
+            return
         if not u.path.startswith("/api/"):
             return super().do_GET()
         q = parse_qs(u.query)
@@ -144,5 +147,8 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print("Field Shift demo on http://localhost:8765")
-    ThreadingHTTPServer(("127.0.0.1", 8765), Handler).serve_forever()
+    # Locally: http://localhost:8765. On a host such as Render, PORT is set and the server listens on all interfaces.
+    port = int(os.environ.get("PORT", "8765"))
+    host = os.environ.get("HOST", "0.0.0.0" if "PORT" in os.environ else "127.0.0.1")
+    print(f"Field Shift demo on http://{'localhost' if host == '127.0.0.1' else host}:{port}")
+    ThreadingHTTPServer((host, port), Handler).serve_forever()

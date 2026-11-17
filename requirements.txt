@@ -1,0 +1,5 @@
+# Only the AI season outlook needs these; the rest of the server is the Python standard library.
+# Versions match the ones used to train ml/data/outlook_model.joblib.
+numpy==2.5.2
+scikit-learn==1.9.1
+joblib==1.6.0
